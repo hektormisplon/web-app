@@ -180,7 +180,7 @@ class Opportunity extends Component {
     constructor(props) {
         super(props);
 
-        this.state = { beaconId: "", makeNew: false };
+        this.state = { beaconId: "", makeNew: false , issuer: null};
 
         this.onSubmit = this.onSubmit.bind(this);
         this.handleChange = this.handleChange.bind(this);
@@ -202,44 +202,68 @@ class Opportunity extends Component {
 
     onSubmit(event) {
         event.preventDefault();
-        const { beaconId } = this.state;
-        this.validateOpportunity(beaconId);
+        this.validateOpportunity();
     }
 
     createBadgeClass() {
+        console.log("trying to create badge class");
         let self = this;
-        let data;
-        let accessToken = "";
-        let header = { headers: { Authorization: "Bearer" + accessToken } };
-        // TODO fill in fields
+        let beaconId = this.state.beaconId;
+        let issuer = this.state.issuer;
+        let opp = this.props.opportunity;
+        let accessToken = this.props.badgrAuth.accessToken;
+        let header = { headers: { Authorization: "Bearer " + accessToken } };
+        console.log("Issuer badgr id: ", issuer.badgrId);
+
+        // TODO fill in url field
         toDataUrl("https://raw.githubusercontent.com/FreekDS/Wof/master/res/player0.png", function (myBase64) {
-            data = {
-                name: "",
-                description: "",
-                issuer: "",
+            let data = {
+                name: opp.title,
+                description: opp.shortDescription,
+                issuer: issuer.badgrId,
                 image: myBase64,
-                criteriaNarrative: ""
+                criteriaNarrative: opp.longDescription
             }
 
-            axios.post();
+            console.log("opp is:", opp);
+
+            axios.post("https://api.badgr.io/v2/badgeclasses", data, header).
+            then((res) => {
+                console.log("badge class created", res);
+                let opportunityId = this.props.id;
+                firestore.validateOpportunity(opportunityId).catch(function (error) {
+                    console.error("Error validating opportunity: ", error);
+                });
+                console.log(beaconId);
+                firestore.linkBeaconToOpportunity(opportunityId, beaconId).catch(function (error) {
+                    console.error("Error linking beacon: ", error);
+                });
+                firestore.linkOpportunityToBeacon(beaconId, opportunityId).catch(function (error) {
+                    console.error("Error linking opportunity: ", error);
+                });
+                this.postNewBadge(opportunityId);
+                this.props.getOpportunities();
+            })
+            .catch(err => console.log(err));
 
         });
     }
 
-    validateOpportunity(beaconId) {
-        let opportunityId = this.props.id;
-        firestore.validateOpportunity(opportunityId).catch(function (error) {
-            console.error("Error validating opportunity: ", error);
-        });
-        console.log(beaconId);
-        firestore.linkBeaconToOpportunity(opportunityId, beaconId).catch(function (error) {
-            console.error("Error linking beacon: ", error);
-        });
-        firestore.linkOpportunityToBeacon(beaconId, opportunityId).catch(function (error) {
-            console.error("Error linking opportunity: ", error);
-        });
-        this.postNewBadge(opportunityId);
-        this.props.getOpportunities();
+    validateOpportunity() {
+        let issuerID = this.props.opportunity.issuerId;
+        console.log("Issuer ID: ", issuerID);
+        firestore.onceGetIssuer(issuerID).then(
+            (res) => {
+                console.log();
+                this.setState({issuer: res.data()});
+            }
+        );
+    }
+
+    componentDidUpdate() {
+        if(this.state.issuer != null && this.state.beaconId != null) {
+            this.createBadgeClass();
+        }
     }
 
     postNewBeacon(major, minor, name) {
